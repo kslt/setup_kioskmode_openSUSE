@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Script: setup_kioskmode_opensuse.sh
-# Beskrivning: Automatiserat skript för att konfigurera och låsa en openSUSE kiosk-miljö för valfri användare.
+# Script: setup_openSUSE_kiosk.sh
+# Beskrivning: Automatiserat skript för att konfigurera och låsa en openSUSE
+#              Kiosk-miljö för valfri användare.
 # Målsystem: openSUSE (KDE Plasma 6)
-# VIKTIGT! Om du får ett felmeddelande, kör: sed -i 's/\r$//' setup_kioskmode_opensuse.sh
-# För att köra skriptet, kör kommandot: sudo bash setup_kioskmode_opensuse.sh
-# Version 2.4
+# Version 2.5
 # Copyright Kasper Sjöström www.kswebb.se
 # GNU Affero General Public License (AGPL)
+# Kör: sed -i 's/\r$//' setup_kioskmode_opensuse.sh
+# Kör skriptet med: sudo bash setup_kioskmode_opensuse.sh
 # ==============================================================================
 
 set -e
 
-# Kontrollera att skriptet körs med sudo / root-rättigheter
 if [ "$EUID" -ne 0 ]; then
   echo "❌ Error: Detta skript måste köras som root/sudo."
   echo "Kör: sudo bash $0"
@@ -22,13 +22,12 @@ fi
 echo "=========================================================="
 echo "   openSUSE Kiosk Setup Script (Allround)"
 echo ""
-echo "   Version 2.4 (2026-10-12)"
+echo "   Version 2.4.1 (2026-10-12)"
 echo "   Copyright Kasper Sjöström, www.kswebb.se"
 echo "   GNU Affero General Public License (AGPL)"
 echo "=========================================================="
 echo ""
 
-# Fråga efter användarnamn med 'scout' som standard om man enbart trycker Enter
 read -rp "Ange användarnamn att konfigurera [standard: scout]: " INPUT_USER
 SCOUT_USER="${INPUT_USER:-scout}"
 SCOUT_HOME="/home/$SCOUT_USER"
@@ -36,17 +35,15 @@ SCOUT_HOME="/home/$SCOUT_USER"
 echo "--> Konfigurerar kiosk-miljö för användaren: '$SCOUT_USER' ($SCOUT_HOME)"
 echo ""
 
-# Kontrollera att den angivna användaren finns
 if ! id "$SCOUT_USER" &>/dev/null; then
     echo "❌ Användaren '$SCOUT_USER' finns inte på systemet."
     echo "Skapa användaren först och logga in en gång så att hemkatalogen initieras."
     exit 1
 fi
 
-# Hjälpfunktion för Ja/Nej-frågor
 confirm() {
     local prompt="$1"
-    local default="$2" # "Y" eller "N"
+    local default="$2"
     local response
 
     if [ "$default" = "Y" ]; then
@@ -87,7 +84,6 @@ if confirm "0. Vill du ändra datornamn (nuvarande: '$CURRENT_HOSTNAME')?" "N"; 
     echo "--> Sätter nytt datornamn till '$NEW_HOSTNAME'..."
     hostnamectl set-hostname "$NEW_HOSTNAME"
 
-    # Uppdatera /etc/hosts
     if grep -q "$CURRENT_HOSTNAME" /etc/hosts; then
         sed -i "s/\b$CURRENT_HOSTNAME\b/$NEW_HOSTNAME/g" /etc/hosts
         echo "    ✔ /etc/hosts uppdaterad (ersatte '$CURRENT_HOSTNAME' med '$NEW_HOSTNAME')."
@@ -163,9 +159,27 @@ fi
 # 3. Konfigurera Firefox-profil & userChrome.css
 # ------------------------------------------------------------------------------
 if confirm "3. Vill du skapa userChrome.css för att dölja Firefox adressfält och menyer?" "Y"; then
-    FIREFOX_DIR="$SCOUT_HOME/.mozilla/firefox"
-    if [ -d "$FIREFOX_DIR" ]; then
-        PROFILES=$(find "$FIREFOX_DIR" -maxdepth 1 -type d -name "*.*")
+    FIREFOX_DIR=""
+    for SEARCH_PATH in \
+        "$SCOUT_HOME/.config/mozilla/firefox" \
+        "$SCOUT_HOME/.mozilla/firefox" \
+        "$SCOUT_HOME/.var/app/org.mozilla.firefox/.mozilla/firefox" \
+        "$SCOUT_HOME/snap/firefox/common/.mozilla/firefox"; do
+        if [ -d "$SEARCH_PATH" ]; then
+            FIREFOX_DIR="$SEARCH_PATH"
+            break
+        fi
+    done
+
+    if [ -n "$FIREFOX_DIR" ]; then
+        echo "    ✔ Hittade Firefox-katalog: $FIREFOX_DIR"
+
+        PROFILES=$(find "$FIREFOX_DIR" -maxdepth 1 -type d \( -name "*.default*" -o -name "*.default-release*" \))
+
+        if [ -z "$PROFILES" ]; then
+            PROFILES=$(find "$FIREFOX_DIR" -maxdepth 1 -type d ! -path "$FIREFOX_DIR" ! -name "Crash Reports" ! -name "Pending Prints")
+        fi
+
         if [ -z "$PROFILES" ]; then
             echo "    ⚠️ Ingen Firefox-profil hittades under $FIREFOX_DIR."
             echo "    Starta Firefox en gång som användaren '$SCOUT_USER' och försök igen."
@@ -223,7 +237,6 @@ EOF
                     echo "    ✔ userChrome.css har skapats i $(basename "$PROF")."
                 fi
 
-                # Aktivera userCustomizations direkt i user.js
                 USER_JS="$PROF/user.js"
                 echo 'user_pref("toolkit.legacyUserProfileCustomizations.stylesheets", true);' >> "$USER_JS"
                 echo 'user_pref("ui.key.menuAccesskey", 0);' >> "$USER_JS"
@@ -233,7 +246,7 @@ EOF
             done
         fi
     else
-        echo "    ⚠️ $FIREFOX_DIR hittades inte. Starta Firefox som användaren '$SCOUT_USER' först."
+        echo "    ⚠️ Ingen Firefox-katalog hittades i hemkatalogen för '$SCOUT_USER'."
     fi
 fi
 
@@ -295,7 +308,6 @@ if confirm "5. Vill du låsa KDE-skrivbordet och blockera högerklick för anvä
     APPLETSRC="$SCOUT_HOME/.config/plasma-org.kde.plasma.desktop-appletsrc"
     mkdir -p "$SCOUT_HOME/.config"
 
-    # Hantera kdeglobals
     if [ -f "$KDEGLOBALS" ]; then
         chmod 644 "$KDEGLOBALS" 2>/dev/null || true
     fi
@@ -312,19 +324,16 @@ EOF
     chmod 444 "$KDEGLOBALS"
     echo "    ✔ $KDEGLOBALS uppdaterad och låst (444)."
 
-    # Hantera plasma-org.kde.plasma.desktop-appletsrc för att ta bort högerklicksmeny på skrivbordet
     if [ -f "$APPLETSRC" ]; then
         chmod 644 "$APPLETSRC" 2>/dev/null || true
     fi
 
-    # Om filen inte finns skapar vi grundstrukturen, annars ser vi till att RightButton inte sätter contextmenu
     if [ ! -f "$APPLETSRC" ]; then
         cat << 'EOF' > "$APPLETSRC"
 [ActionPlugins][0]
 RightButton;NoModifier=
 EOF
     else
-        # Ta bort befintlig RightButton-koppling om den finns och lägg till tom eller lägg till sektionen
         if grep -q "\[ActionPlugins\]\[0\]" "$APPLETSRC"; then
             sed -i '/\[ActionPlugins\]\[0\]/,/^\[/ s/RightButton;NoModifier=.*/RightButton;NoModifier=/' "$APPLETSRC"
         else
@@ -336,7 +345,6 @@ EOF
     chmod 444 "$APPLETSRC"
     echo "    ✔ Skrivbordets högerklick har blockerats i $APPLETSRC och filen har låsts (444)."
 
-    # Kör lockCorona via DBus (Plasma 6 / Plasma 5) för den inloggade sessionen om den är igång
     echo "--> Verkställer lockCorona för Plasma..."
     sudo -u "$SCOUT_USER" qdbus6 org.kde.plasmashell /PlasmaShell evaluateScript 'lockCorona(true)' 2>/dev/null \
     || sudo -u "$SCOUT_USER" qdbus org.kde.plasmashell /PlasmaShell evaluateScript 'lockCorona(true)' 2>/dev/null \
