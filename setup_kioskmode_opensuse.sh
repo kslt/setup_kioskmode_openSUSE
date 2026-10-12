@@ -3,8 +3,8 @@
 # Script: setup_kioskmode_opensuse.sh
 # Beskrivning: Automatiserat skript för att konfigurera och låsa en openSUSE kiosk-miljö för valfri användare.
 # Målsystem: openSUSE (KDE Plasma 6)
-# VIKTIGT! Om du får ett felmeddelande, kör: sed -i 's/\r$//' setup_openSUSE_kiosk.sh
-# För att köra skriptet, kör kommandot: sudo bash setup_openSUSE_kiosk.sh
+# VIKTIGT! Om du får ett felmeddelande, kör: sed -i 's/\r$//' setup_kioskmode_opensuse.sh
+# För att köra skriptet, kör kommandot: sudo bash setup_kioskmode_opensuse.sh
 # Version 2.4
 # Copyright Kasper Sjöström www.kswebb.se
 # GNU Affero General Public License (AGPL)
